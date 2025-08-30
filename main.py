@@ -119,7 +119,7 @@ def get_summary_file_name(
     if elapsed_seconds is not None:
         base = f"{base}[{elapsed_seconds}s]"
 
-    output_file_name = f"{base}.txt"
+    output_file_name = f"{base}.md"
 
     return os.path.join(file_dir, output_file_name) if file_dir else output_file_name
 
