@@ -148,7 +148,7 @@ def get_minutes_one_call(file_name: str, meeting_date: str, client: OpenAI, mode
                 {"role": "user", "content": user_message},
             ],
             temperature=temperature,
-            max_tokens=60000,
+            max_tokens=30000,
             timeout=1800,
         )
 
@@ -284,31 +284,31 @@ def main():
 
 {meeting_date}
 
-## Цели встречи
+### Цели встречи
 
 {format_section_items(minutes.meeting_goals)}
 
-## Установленные факты
+### Установленные факты
 
 {format_section_items(minutes.established_facts)}
 
-## Имеющиеся проблемы
+### Имеющиеся проблемы
 
 {format_section_items(minutes.existing_problems)}
 
-## Принятые решения
+### Принятые решения
 
 {format_section_items(minutes.decisions_made)}
 
-## Задачи к исполнению
+### Задачи к исполнению
 
 {format_tasks_items(minutes.tasks_to_execute)}
 
-## Вопросы и ответы
+### Вопросы и ответы
 
 {qa_markdown}
 
-## Открытые вопросы
+### Открытые вопросы
 
 {format_section_items(minutes.open_questions)}
 """

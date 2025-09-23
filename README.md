@@ -10,12 +10,12 @@ CLI‑скрипт для генерации протокола совещани
 Достаточно настроить одного из провайдеров (локальный или облачный). Указывайте совместимый с OpenAI API endpoint и ключ, модель — идентификатор модели.
 
 ```env
-# Local/secure LLM provided
+# Локальный провайдер
 API_BASE_LOCAL=
 API_KEY_LOCAL=
 MODEL_LOCAL=
 
-# Cloud LLM provider
+# Облачный провайдер
 API_BASE_CLOUD=
 API_KEY_CLOUD=
 MODEL_CLOUD=
@@ -55,7 +55,7 @@ uv run main.py path\to\transcript.txt -t 0.2
 
 ### Результат
 - Итоговый протокол сохраняется рядом с исходным файлом транскрипта под именем вида:
-  `<basename>-<тема_встречи>-<model>[<время генерации>].txt`.
+  `<basename>-<тема_встречи>-<model>[<время генерации>].md`.
 
 
 
