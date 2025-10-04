@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List
+
 class QAItem(BaseModel):
     """Individual question and answer pair using SGR Cycle pattern."""
     question: str = Field(description="The question asked during the meeting")
@@ -26,19 +27,19 @@ class MinutesResponse(BaseModel):
         max_length=5
     )
     established_facts: List[ProtocolItem] = Field(
-        description="List of facts established and confirmed during the meeting",
+        description="List of the most significant facts established and confirmed during the meeting",
         max_length=10
     )
     existing_problems: List[ProtocolItem] = Field(
-        description="List of problems and issues identified during the meeting",
+        description="List of the most significant problems and issues identified during the meeting",
+        max_length=10
+    )
+    decisions_made: List[ProtocolItem] = Field(
+        description="List of the most significant decisions, agreements and resolutions made during the meeting",
         max_length=10
     )
     tasks_to_execute: List[ProtocolItem] = Field(
         description="List of action items and tasks to be completed with known details such as responsible and deadline",
-        max_length=10
-    )
-    decisions_made: List[ProtocolItem] = Field(
-        description="List of decisions, agreements and resolutions made during the meeting. Should not overlap with established facts nor tasks to execute",
         max_length=10
     )
     # Q&A extraction using SGR Cycle pattern
@@ -53,5 +54,3 @@ class MinutesResponse(BaseModel):
     meeting_title: str = Field(
         description="Short, descriptive meeting title in Russian (up to 40 characters)"
     )
-
-

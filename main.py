@@ -148,8 +148,8 @@ def get_minutes_one_call(file_name: str, meeting_date: str, client: OpenAI, mode
                 {"role": "user", "content": user_message},
             ],
             temperature=temperature,
-            max_tokens=30000,
-            timeout=1800,
+            max_tokens=60000,
+            timeout=3600,
         )
 
         if not completion.choices or not completion.choices[0].message:
