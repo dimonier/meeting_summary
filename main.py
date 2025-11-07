@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import re
 import logging
@@ -42,11 +44,11 @@ API_BASE_LOCAL = os.getenv("API_BASE_LOCAL")
 API_KEY_LOCAL = os.getenv("API_KEY_LOCAL")
 MODEL_ID_LOCAL = os.getenv("MODEL_LOCAL")
 
-def get_meeting_date_regex(file_name: str) -> str:
+def get_meeting_date_regex(file_name: str) -> tuple[datetime.date, str]:
     """
     Extract meeting date from filename using regex patterns.
     Supports YYYY-MM-DD and YYYY-MMDD formats.
-    Returns date in format: "день недели YYYY-MM-DD"
+    Returns: (date_object, formatted_string_for_protocol)
     """
     filename = os.path.basename(file_name)
     logger.info(f"Extracting date from filename: {filename}")
@@ -87,7 +89,7 @@ def get_meeting_date_regex(file_name: str) -> str:
     day_of_week_name = weekdays_ru[day_of_week_num]
 
     final_answer_str = f"Дата совещания: {day_of_week_name} {meeting_date.strftime('%Y-%m-%d')}"
-    return final_answer_str
+    return meeting_date, final_answer_str
 
 def load_transcript(file_name: str) -> str:
     with open(file_name, encoding="utf-8") as file:
@@ -101,6 +103,8 @@ def get_summary_file_name(
     suffix: str = "",
     details: bool = False,
     elapsed_seconds: int | None = None,
+    meeting_date: datetime.date | None = None,
+    keep_base_name: bool = False,
 ) -> str:
     """Build final summary file path.
 
@@ -112,18 +116,21 @@ def get_summary_file_name(
     file_base_name_without_ext = os.path.splitext(file_base_name)[0]
     safe_model_name = model_id.split("/")[-1]
 
-    if details:
-        if suffix:
-            base = f"{file_base_name_without_ext}-{suffix}-{safe_model_name}"
-        else:
-            base = f"{file_base_name_without_ext}-{safe_model_name}"
+    # If meeting_date is provided, use date prefix instead of original filename
+    if meeting_date is not None:
+        date_prefix = meeting_date.strftime("%Y-%m-%d")
+    else:
+        date_prefix = datetime.now().strftime("%Y-%m-%d")
 
+    base = file_base_name_without_ext if keep_base_name else date_prefix
+
+    base = f"{base}-{suffix}" if suffix else base
+
+    if details:
+        base = f"{base}-{safe_model_name}"
         if elapsed_seconds is not None:
             base = f"{base}[{elapsed_seconds}s]"
-    else:
-        base = f"{file_base_name_without_ext}-{suffix}" if suffix else file_base_name_without_ext
-            
-        
+
     output_file_name = f"{base}.md"
 
     return os.path.join(file_dir, output_file_name) if file_dir else output_file_name
@@ -178,7 +185,7 @@ def make_filesystem_safe_suffix(suffix: str) -> str:
     # Remove leading/trailing dashes
     safe_suffix = safe_suffix.strip('-')
     # Limit length to 30 characters
-    safe_suffix = safe_suffix[:40]
+    safe_suffix = safe_suffix[:60]
     return safe_suffix
 
 
@@ -198,10 +205,12 @@ def main():
     parser.add_argument("--online", action="store_true", help="Use online cloud LLM provider instead of local.")
     parser.add_argument("-t", "--temperature", type=float, default=0.15, help="Sampling temperature for the LLM (default: 0.15).")
     parser.add_argument("--details", action="store_true", help="Add model name and generation time to output filename (default: False).")
+    parser.add_argument("--keep_base_name", action="store_true", help="Keep original transcript filename as base (default: use date prefix).")
 
     args = parser.parse_args()
     transcript_file_name = args.transcript_file
     use_online = args.online
+    keep_base_name = args.keep_base_name if args.keep_base_name else False
 
     # Determine which provider configuration to use
     if use_online:
@@ -226,14 +235,14 @@ def main():
     )
 
     # Get meeting date using algorithmic extraction
-    meeting_date = get_meeting_date_regex(transcript_file_name)
+    meeting_date_obj, meeting_date_str = get_meeting_date_regex(transcript_file_name)
 
-    logger.info(f"Processing meeting from {meeting_date}")
+    logger.info(f"Processing meeting from {meeting_date_str}")
 
     generation_start_time = datetime.now()
     minutes = get_minutes_one_call(
         file_name=transcript_file_name,
-        meeting_date=meeting_date,
+        meeting_date=meeting_date_str,
         client=openai_client,
         model_id=model_id,
         temperature=args.temperature,
@@ -288,7 +297,7 @@ def main():
 
     full_protocol = f"""# Протокол совещания: {minutes.meeting_title}
 
-{meeting_date}
+{meeting_date_str}
 
 ### Цели встречи
 
@@ -327,6 +336,8 @@ def main():
         suffix=meeting_title_filename_suffix,
         details=args.details,
         elapsed_seconds=elapsed_seconds_whole,
+        meeting_date=meeting_date_obj if not args.keep_base_name else None,
+        keep_base_name=keep_base_name,
     )
     with open(summary_file_name_with_time, "w", encoding="utf-8") as file:
         file.write(full_protocol)
