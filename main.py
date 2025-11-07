@@ -99,6 +99,7 @@ def get_summary_file_name(
     file_name: str,
     model_id: str,
     suffix: str = "",
+    details: bool = False,
     elapsed_seconds: int | None = None,
 ) -> str:
     """Build final summary file path.
@@ -111,14 +112,18 @@ def get_summary_file_name(
     file_base_name_without_ext = os.path.splitext(file_base_name)[0]
     safe_model_name = model_id.split("/")[-1]
 
-    if suffix:
-        base = f"{file_base_name_without_ext}-{suffix}-{safe_model_name}"
+    if details:
+        if suffix:
+            base = f"{file_base_name_without_ext}-{suffix}-{safe_model_name}"
+        else:
+            base = f"{file_base_name_without_ext}-{safe_model_name}"
+
+        if elapsed_seconds is not None:
+            base = f"{base}[{elapsed_seconds}s]"
     else:
-        base = f"{file_base_name_without_ext}-{safe_model_name}"
-
-    if elapsed_seconds is not None:
-        base = f"{base}[{elapsed_seconds}s]"
-
+        base = f"{file_base_name_without_ext}-{suffix}" if suffix else file_base_name_without_ext
+            
+        
     output_file_name = f"{base}.md"
 
     return os.path.join(file_dir, output_file_name) if file_dir else output_file_name
@@ -192,6 +197,7 @@ def main():
 
     parser.add_argument("--online", action="store_true", help="Use online cloud LLM provider instead of local.")
     parser.add_argument("-t", "--temperature", type=float, default=0.15, help="Sampling temperature for the LLM (default: 0.15).")
+    parser.add_argument("--details", action="store_true", help="Add model name and generation time to output filename (default: False).")
 
     args = parser.parse_args()
     transcript_file_name = args.transcript_file
@@ -319,6 +325,7 @@ def main():
         file_name=transcript_file_name,
         model_id=model_id,
         suffix=meeting_title_filename_suffix,
+        details=args.details,
         elapsed_seconds=elapsed_seconds_whole,
     )
     with open(summary_file_name_with_time, "w", encoding="utf-8") as file:
