@@ -289,6 +289,52 @@ def main():
 
         return "\n".join(numbered_items)
 
+    def format_key_decisions(decisions):
+        """Format key decisions as a markdown table with 8 columns."""
+        if not decisions:
+            return "Отсутствуют"
+
+        # Table header
+        table = "| № | Контекст | Вопрос | Рассмотренные варианты | Решение | Статус | Последствия | Обоснование |\n"
+        table += "|---|----------|--------|------------------------|---------|--------|-------------|-------------|\n"
+
+        for i, decision in enumerate(decisions, 1):
+            # Format considered options as bullet list
+            options_text = "<br>".join([f"- {opt}" for opt in decision.considered_options])
+            
+            # Format consequences with line breaks
+            consequences_text = "<br>".join(decision.consequences)
+            
+            # Escape pipe characters in cell content
+            context = decision.context.replace("|", "\\|")
+            question = decision.question.replace("|", "\\|")
+            decision_text = decision.proposed_decision.replace("|", "\\|")
+            status = decision.status.replace("|", "\\|")
+            rationale = decision.rationale.replace("|", "\\|")
+            
+            table += f"| {i} | {context} | {question} | {options_text} | {decision_text} | {status} | {consequences_text} | {rationale} |\n"
+
+        return table
+
+    def format_assignments(assignments):
+        """Format assignments as a markdown table with 4 columns."""
+        if not assignments:
+            return "Отсутствуют"
+
+        # Table header
+        table = "| № | Что сделать | Ответственный | Срок |\n"
+        table += "|---|-------------|---------------|------|\n"
+
+        for i, assignment in enumerate(assignments, 1):
+            # Escape pipe characters in cell content
+            task = assignment.task.replace("|", "\\|")
+            responsible = assignment.responsible.replace("|", "\\|")
+            deadline = assignment.deadline.replace("|", "\\|")
+            
+            table += f"| {i} | {task} | {responsible} | {deadline} |\n"
+
+        return table
+
     # Build Q&A section to embed into the summary
     qa_markdown = "| № | Вопрос | Ответ |\n"
     qa_markdown += "|----|---------|--------|\n"
@@ -311,13 +357,13 @@ def main():
 
 {format_section_items(minutes.existing_problems)}
 
-### Принятые решения
+### Ключевые решения
 
-{format_section_items(minutes.decisions_made)}
+{format_key_decisions(minutes.decision_records)}
 
-### Задачи к исполнению
+### Поручения
 
-{format_tasks_items(minutes.tasks_to_execute)}
+{format_assignments(minutes.assignments)}
 
 ### Вопросы и ответы
 
