@@ -1,0 +1,5 @@
+- canonical: Kafka
+  variants:
+    - кавка
+    - кафка
+  description: Брокер сообщений Apache Kafka

@@ -6,12 +6,14 @@ import logging
 import logging.handlers
 import argparse
 from datetime import datetime
+from typing import Optional
 
 from dotenv import load_dotenv
 from openai import OpenAI
 
 from meeting_summary_prompts import system_message
 from sgr_minutes_models import MinutesResponse
+from glossary import Glossary, load_glossary, merge_glossaries
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -136,14 +138,32 @@ def get_summary_file_name(
     return os.path.join(file_dir, output_file_name) if file_dir else output_file_name
 
 
-def get_minutes_one_call(file_name: str, meeting_date: str, client: OpenAI, model_id: str, temperature: float) -> MinutesResponse:
+def _build_system_message_with_glossary(glossary: Optional[Glossary]) -> str:
+    """Build final system message, optionally enriched with glossary rules."""
+    if glossary is None or glossary.is_empty():
+        return system_message
+
+    glossary_block = glossary.to_prompt_block()
+    if not glossary_block:
+        return system_message
+
+    return f"{system_message}\n\n{glossary_block}"
+
+
+def get_minutes_one_call(
+    file_name: str,
+    meeting_date: str,
+    client: OpenAI,
+    model_id: str,
+    temperature: float,
+    glossary: Optional[Glossary] = None,
+) -> MinutesResponse:
     """Run a single SGR-guided call that returns all minutes artifacts with detailed protocol sections.
 
     The model is guided to fill the schema fields in a cascade order:
     topics -> protocol sections -> Q&A -> filename suffix.
     """
     transcript = load_transcript(file_name)
-
 
     user_message = (
         f"Дата встречи: {meeting_date}\n\n"
@@ -156,7 +176,10 @@ def get_minutes_one_call(file_name: str, meeting_date: str, client: OpenAI, mode
             model=model_id,
             response_format=MinutesResponse,
             messages=[
-                {"role": "system", "content": system_message},
+                {
+                    "role": "system",
+                    "content": _build_system_message_with_glossary(glossary),
+                },
                 {"role": "user", "content": user_message},
             ],
             temperature=temperature,
@@ -206,11 +229,23 @@ def main():
     parser.add_argument("-t", "--temperature", type=float, default=0.15, help="Sampling temperature for the LLM (default: 0.15).")
     parser.add_argument("--details", action="store_true", help="Add model name and generation time to output filename (default: False).")
     parser.add_argument("--keep_base_name", action="store_true", help="Keep original transcript filename as base (default: use date prefix).")
+    parser.add_argument(
+        "--extra-glossary",
+        dest="extra_glossary",
+        help="Path to an additional glossary YAML file that overrides base entries on conflicts.",
+    )
+    parser.add_argument(
+        "--no-glossary-cleanup",
+        dest="no_glossary_cleanup",
+        action="store_true",
+        help="Disable automatic post-processing cleanup of incorrect term variants in parentheses (default: cleanup enabled).",
+    )
 
     args = parser.parse_args()
     transcript_file_name = args.transcript_file
     use_online = args.online
     keep_base_name = args.keep_base_name if args.keep_base_name else False
+    extra_glossary_path: Optional[str] = args.extra_glossary
 
     # Determine which provider configuration to use
     if use_online:
@@ -227,7 +262,7 @@ def main():
     # Use specified model or default for selected provider
     model_id = args.model if args.model else default_model
 
-    logger.info(f"Using {provider_type} provider with model: {model_id}")
+    logger.info("Using %s provider with model: %s", provider_type, model_id)
 
     openai_client = OpenAI(
         base_url=api_base,
@@ -237,7 +272,34 @@ def main():
     # Get meeting date using algorithmic extraction
     meeting_date_obj, meeting_date_str = get_meeting_date_regex(transcript_file_name)
 
-    logger.info(f"Processing meeting from {meeting_date_str}")
+    logger.info("Processing meeting from %s", meeting_date_str)
+
+    # Load base glossary.yaml if present, and optional extra glossary if provided
+    glossary: Optional[Glossary] = None
+    base_glossary_path = "glossary.yaml"
+
+    try:
+        if os.path.exists(base_glossary_path):
+            base_glossary = load_glossary(base_glossary_path)
+        else:
+            base_glossary = None
+
+        extra_glossary: Optional[Glossary] = None
+        if extra_glossary_path:
+            extra_glossary = load_glossary(extra_glossary_path)
+
+        if base_glossary and extra_glossary:
+            glossary = merge_glossaries(base_glossary, extra_glossary)
+        else:
+            glossary = extra_glossary or base_glossary
+
+    except FileNotFoundError as e:
+        # Extra glossary path is wrong – fail fast with clear log
+        logger.error("Glossary file not found: %s", e)
+        raise
+    except Exception as e:
+        logger.error("Failed to load glossary files: %s", e)
+        raise
 
     generation_start_time = datetime.now()
     minutes = get_minutes_one_call(
@@ -246,12 +308,13 @@ def main():
         client=openai_client,
         model_id=model_id,
         temperature=args.temperature,
+        glossary=glossary,
     )
     generation_end_time = datetime.now()
     generation_seconds = (generation_end_time - generation_start_time).total_seconds()
 
     meeting_title_filename_suffix = make_filesystem_safe_suffix(minutes.meeting_title)
-    logger.info(f"Got response, meeting title: {minutes.meeting_title}")
+    logger.info("Got response, meeting title: %s", minutes.meeting_title)
 
     # Assemble full protocol from individual sections using Cycle pattern data
     def format_section_items(items):
@@ -289,6 +352,52 @@ def main():
 
         return "\n".join(numbered_items)
 
+    def format_key_decisions(decisions):
+        """Format key decisions as a markdown table with 8 columns."""
+        if not decisions:
+            return "Отсутствуют"
+
+        # Table header
+        table = "| № | Контекст | Вопрос | Рассмотренные варианты | Решение | Статус | Последствия | Обоснование |\n"
+        table += "|---|----------|--------|------------------------|---------|--------|-------------|-------------|\n"
+
+        for i, decision in enumerate(decisions, 1):
+            # Format considered options as bullet list
+            options_text = "<br>".join([f"- {opt}" for opt in decision.considered_options])
+            
+            # Format consequences with line breaks
+            consequences_text = "<br>".join(decision.consequences)
+            
+            # Escape pipe characters in cell content
+            context = decision.context.replace("|", "\\|")
+            question = decision.question.replace("|", "\\|")
+            decision_text = decision.proposed_decision.replace("|", "\\|")
+            status = decision.status.replace("|", "\\|")
+            rationale = decision.rationale.replace("|", "\\|")
+            
+            table += f"| {i} | {context} | {question} | {options_text} | {decision_text} | {status} | {consequences_text} | {rationale} |\n"
+
+        return table
+
+    def format_assignments(assignments):
+        """Format assignments as a markdown table with 4 columns."""
+        if not assignments:
+            return "Отсутствуют"
+
+        # Table header
+        table = "| № | Что сделать | Ответственный | Срок |\n"
+        table += "|---|-------------|---------------|------|\n"
+
+        for i, assignment in enumerate(assignments, 1):
+            # Escape pipe characters in cell content
+            task = assignment.task.replace("|", "\\|")
+            responsible = assignment.responsible.replace("|", "\\|")
+            deadline = assignment.deadline.replace("|", "\\|")
+            
+            table += f"| {i} | {task} | {responsible} | {deadline} |\n"
+
+        return table
+
     # Build Q&A section to embed into the summary
     qa_markdown = "| № | Вопрос | Ответ |\n"
     qa_markdown += "|----|---------|--------|\n"
@@ -311,13 +420,13 @@ def main():
 
 {format_section_items(minutes.existing_problems)}
 
-### Принятые решения
+### Ключевые решения
 
-{format_section_items(minutes.decisions_made)}
+{format_key_decisions(minutes.decision_records)}
 
-### Задачи к исполнению
+### Поручения
 
-{format_tasks_items(minutes.tasks_to_execute)}
+{format_assignments(minutes.assignments)}
 
 ### Вопросы и ответы
 
@@ -327,6 +436,11 @@ def main():
 
 {format_section_items(minutes.open_questions)}
 """
+
+    # Apply glossary-based cleanup to remove incorrect variants in parentheses
+    if glossary and not glossary.is_empty() and not args.no_glossary_cleanup:
+        full_protocol = glossary.clean_protocol_text(full_protocol)
+        logger.info("Applied glossary cleanup to protocol text")
 
     # Write full protocol with meeting date header
     elapsed_seconds_whole = int(generation_seconds)
@@ -343,7 +457,11 @@ def main():
         file.write(full_protocol)
 
     # Q&A is now embedded into the summary; no separate Q&A file is written
-    logger.info(f"Summary saved to file: {summary_file_name_with_time}; generation time: {generation_seconds:.2f} seconds")
+    logger.info(
+        "Summary saved to file: %s; generation time: %.2f seconds",
+        summary_file_name_with_time,
+        generation_seconds,
+    )
 
 if __name__ == "__main__":
     main()
