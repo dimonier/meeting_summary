@@ -12,6 +12,24 @@ class ProtocolItem(BaseModel):
     content: str = Field(description="The content of this protocol item")
 
 
+class DecisionRecords(BaseModel):
+    """Key decision made during the meeting with full context and consequences."""
+    context: str = Field(description="The context or situation that led to the question")
+    question: str = Field(description="The core question or issue being addressed.")
+    considered_options: List[str] = Field(description="List of options that were considered")
+    proposed_decision: str = Field(description="The final decision made. Should exactly match one of `considered_options`. No follow-up actions are allowed in this foeld.")
+    status: str = Field(description="Status of the proposed_decision: Предложено, Принято, or Отложено. 'Предложено' means that the discussion or research is not finished yet. 'Принято' means that one of the considered options is approved (proposed_decision matches one of considered_options), and no changes on this topic are expected. 'Отложено' means that the question does not matter at the moment. 'Отклонено' means that none of considered_options are good enough.")
+    consequences: List[str] = Field(description="List of consequences of the proposed decision, each prefixed with (+) for positive or (-) for negative")
+    rationale: str = Field(description="The reasoning or justification behind proposed decision")
+
+
+class Assignment(BaseModel):
+    """Task assignment with responsible person and deadline."""
+    task: str = Field(description="What needs to be done")
+    responsible: str = Field(description="Who is responsible for this task")
+    deadline: str = Field(description="When this task should be completed")
+
+
 class MinutesResponse(BaseModel):
     """Structured output for one-shot minutes generation with SGR Cycle patterns.
 
@@ -23,24 +41,19 @@ class MinutesResponse(BaseModel):
 
     meeting_goals: List[ProtocolItem] = Field(
         description="List of meeting goals and objectives",
-        min_length=2,
-        max_length=5
+        min_length=2
     )
     established_facts: List[ProtocolItem] = Field(
-        description="List of the most significant facts established and confirmed during the meeting",
-        max_length=10
+        description="List of the most significant facts established and confirmed during the meeting"
     )
     existing_problems: List[ProtocolItem] = Field(
-        description="List of the most significant problems and issues identified during the meeting",
-        max_length=10
+        description="List of the most significant problems and issues identified during the meeting"
     )
-    decisions_made: List[ProtocolItem] = Field(
-        description="List of the most significant decisions, agreements and resolutions made during the meeting",
-        max_length=10
+    assignments: List[Assignment] = Field(
+        description="List of task assignments with responsible persons and deadlines where specified"
     )
-    tasks_to_execute: List[ProtocolItem] = Field(
-        description="List of action items and tasks to be completed with known details such as responsible and deadline",
-        max_length=10
+    decision_records: List[DecisionRecords] = Field(
+        description="Decision Records - a list of decisions made during the meeting."
     )
     # Q&A extraction using SGR Cycle pattern
     qa_items: List[QAItem] = Field(
@@ -49,8 +62,8 @@ class MinutesResponse(BaseModel):
         max_length=20
     )
     open_questions: List[ProtocolItem] = Field(
-        description="List of open questions that have no confident answers and unresolved issues"
+        description="List of open questions that have no confident answers and no decisions or assignments were made on them"
     )
     meeting_title: str = Field(
-        description="Short, descriptive meeting title in Russian (up to 40 characters)"
+        description="Short, descriptive meeting title in Russian (up to 60 characters)"
     )
