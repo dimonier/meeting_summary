@@ -241,10 +241,10 @@ def main():
         help="Disable automatic post-processing cleanup of incorrect term variants in parentheses (default: cleanup enabled).",
     )
     parser.add_argument(
-        "--force-replace-variants",
-        dest="force_replace_variants",
+        "--no-force-replace",
+        dest="no_force_replace",
         action="store_true",
-        help="Force replace all standalone glossary variant occurrences with canonical terms, case-insensitive (default: disabled).",
+        help="Disable automatic force replacement of all standalone glossary variant occurrences with canonical terms (default: force replacement enabled).",
     )
 
     args = parser.parse_args()
@@ -448,8 +448,8 @@ def main():
         full_protocol = glossary.clean_protocol_text(full_protocol)
         logger.info("Applied glossary cleanup to protocol text")
 
-    # Force replace all variant occurrences with canonical terms if requested
-    if glossary and not glossary.is_empty() and args.force_replace_variants:
+    # Force replace all variant occurrences with canonical terms (enabled by default)
+    if glossary and not glossary.is_empty() and not args.no_force_replace:
         full_protocol = glossary.force_replace_variants(full_protocol)
         logger.info("Applied force replacement of glossary variants with canonical terms")
 
