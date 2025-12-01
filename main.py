@@ -240,6 +240,12 @@ def main():
         action="store_true",
         help="Disable automatic post-processing cleanup of incorrect term variants in parentheses (default: cleanup enabled).",
     )
+    parser.add_argument(
+        "--force-replace-variants",
+        dest="force_replace_variants",
+        action="store_true",
+        help="Force replace all standalone glossary variant occurrences with canonical terms, case-insensitive (default: disabled).",
+    )
 
     args = parser.parse_args()
     transcript_file_name = args.transcript_file
@@ -441,6 +447,11 @@ def main():
     if glossary and not glossary.is_empty() and not args.no_glossary_cleanup:
         full_protocol = glossary.clean_protocol_text(full_protocol)
         logger.info("Applied glossary cleanup to protocol text")
+
+    # Force replace all variant occurrences with canonical terms if requested
+    if glossary and not glossary.is_empty() and args.force_replace_variants:
+        full_protocol = glossary.force_replace_variants(full_protocol)
+        logger.info("Applied force replacement of glossary variants with canonical terms")
 
     # Write full protocol with meeting date header
     elapsed_seconds_whole = int(generation_seconds)
