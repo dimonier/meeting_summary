@@ -83,6 +83,38 @@ class Glossary:
 
         return text
 
+    def force_replace_variants(self, text: str) -> str:
+        """Force replace all standalone variant occurrences with canonical terms.
+
+        This is an aggressive post-processing step that replaces any standalone
+        word matching a glossary variant (case-insensitive) with its canonical term.
+
+        Example: "GVT токен" -> "JWT токен", "Кавка брокер" -> "Kafka брокер"
+        """
+        if not text or self.is_empty():
+            return text
+
+        # Build a map: variant (lowercase) -> canonical term
+        variant_to_canonical: Dict[str, str] = {}
+        for entry in self.entries:
+            for variant in entry.normalized_variants():
+                variant_to_canonical[variant.lower()] = entry.canonical
+
+        # Sort variants by length (descending) to handle multi-word variants first
+        sorted_variants = sorted(variant_to_canonical.keys(), key=len, reverse=True)
+
+        # Replace each variant with its canonical term
+        for variant_lower in sorted_variants:
+            canonical = variant_to_canonical[variant_lower]
+            # Escape variant for regex
+            variant_escaped = re.escape(variant_lower)
+            # Match variant as a whole word (case-insensitive)
+            pattern = rf"\b{variant_escaped}\b"
+            # Replace with canonical term, preserving surrounding text
+            text = re.sub(pattern, canonical, text, flags=re.IGNORECASE)
+
+        return text
+
     def to_prompt_block(self) -> str:
         """Render glossary rules as a text block for inclusion into system prompt.
 
