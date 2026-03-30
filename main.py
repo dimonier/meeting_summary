@@ -17,6 +17,8 @@ from glossary import Glossary, load_glossary, merge_glossaries
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+
 def _setup_file_logging() -> None:
     """Configure daily rotating file logging and keep 30 days."""
     log_dir = "logs"
@@ -150,6 +152,11 @@ def _build_system_message_with_glossary(glossary: Optional[Glossary]) -> str:
     return f"{system_message}\n\n{glossary_block}"
 
 
+def _parse_minutes_from_raw_json(raw_text: str) -> MinutesResponse:
+    """Validate raw JSON text against the meeting minutes schema."""
+    return MinutesResponse.model_validate_json(raw_text)
+
+
 def get_minutes_one_call(
     file_name: str,
     meeting_date: str,
@@ -187,12 +194,23 @@ def get_minutes_one_call(
             timeout=3600,
         )
 
+        first_choice = completion.choices[0] if completion.choices else None
+        first_message = first_choice.message if first_choice else None
+        reasoning_content = getattr(first_message, "reasoning_content", None) if first_message else None
+
         if not completion.choices or not completion.choices[0].message:
             raise ValueError("Empty LLM response")
 
         minutes: MinutesResponse | None = getattr(completion.choices[0].message, "parsed", None)
         if minutes is None:
-            raise ValueError("Parsed MinutesResponse is missing in the response")
+            raw_json_candidate = reasoning_content if isinstance(reasoning_content, str) and reasoning_content.strip() else None
+            if raw_json_candidate is not None:
+                try:
+                    minutes = _parse_minutes_from_raw_json(raw_json_candidate)
+                except Exception as fallback_error:
+                    raise ValueError("Parsed MinutesResponse is missing in the response") from fallback_error
+            else:
+                raise ValueError("Parsed MinutesResponse is missing in the response")
 
         return minutes
 
@@ -208,7 +226,7 @@ def make_filesystem_safe_suffix(suffix: str) -> str:
     # Remove leading/trailing dashes
     safe_suffix = safe_suffix.strip('-')
     # Limit length to 30 characters
-    safe_suffix = safe_suffix[:60]
+    safe_suffix = safe_suffix[:80]
     return safe_suffix
 
 

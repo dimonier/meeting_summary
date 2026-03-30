@@ -26,8 +26,8 @@ class DecisionRecords(BaseModel):
 class Assignment(BaseModel):
     """Task assignment with responsible person and deadline."""
     task: str = Field(description="What needs to be done")
-    responsible: str = Field(description="Who is responsible for this task")
-    deadline: str = Field(description="When this task should be completed")
+    responsible: str = Field(description="Who is responsible for this task. Keep blank if unknown")
+    deadline: str = Field(description="When this task should be completed. Keep blank if unknown")
 
 
 class MinutesResponse(BaseModel):
@@ -58,12 +58,11 @@ class MinutesResponse(BaseModel):
     # Q&A extraction using SGR Cycle pattern
     qa_items: List[QAItem] = Field(
         description="A concise list of questions and their corresponding answers from the meeting transcript, focusing solely on relevant discussion topics",
-        min_length=3,
-        max_length=20
+        min_length=3
     )
     open_questions: List[ProtocolItem] = Field(
         description="List of open questions that have no confident answers and no decisions or assignments were made on them"
     )
     meeting_title: str = Field(
-        description="Short, descriptive meeting title in Russian (up to 60 characters)"
+        description="Short, descriptive meeting title in Russian (up to 80 characters)"
     )
