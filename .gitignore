@@ -4,6 +4,7 @@ __pycache__/
 build/
 dist/
 wheels/
+logs/
 *.egg-info
 .env
 *.log
@@ -11,6 +12,7 @@ record*.txt
 *.pyc
 .env
 *bak
+*.bat
 *.txt
 *.html
 

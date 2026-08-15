@@ -10,6 +10,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from openai import OpenAI
+from openai.lib._pydantic import to_strict_json_schema
 
 from meeting_summary_prompts import system_message
 from sgr_minutes_models import MinutesResponse
@@ -152,9 +153,15 @@ def _build_system_message_with_glossary(glossary: Optional[Glossary]) -> str:
     return f"{system_message}\n\n{glossary_block}"
 
 
+def _strip_think_block(raw_text: str) -> str:
+    """Remove leading <think>...</think> blocks from the raw response text."""
+    stripped = re.sub(r"^\s*(?:<think>.*?</think>\s*)+", "", raw_text, flags=re.DOTALL)
+    return stripped.strip()
+
+
 def _parse_minutes_from_raw_json(raw_text: str) -> MinutesResponse:
     """Validate raw JSON text against the meeting minutes schema."""
-    return MinutesResponse.model_validate_json(raw_text)
+    return MinutesResponse.model_validate_json(_strip_think_block(raw_text))
 
 
 def get_minutes_one_call(
@@ -179,9 +186,16 @@ def get_minutes_one_call(
     )
 
     try:
-        completion = client.chat.completions.parse(
+        completion = client.chat.completions.create(
             model=model_id,
-            response_format=MinutesResponse,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "minutes_response",
+                    "schema": to_strict_json_schema(MinutesResponse),
+                    "strict": True,
+                },
+            },
             messages=[
                 {
                     "role": "system",
@@ -196,23 +210,24 @@ def get_minutes_one_call(
 
         first_choice = completion.choices[0] if completion.choices else None
         first_message = first_choice.message if first_choice else None
-        reasoning_content = getattr(first_message, "reasoning_content", None) if first_message else None
 
-        if not completion.choices or not completion.choices[0].message:
+        if not first_message:
             raise ValueError("Empty LLM response")
 
-        minutes: MinutesResponse | None = getattr(completion.choices[0].message, "parsed", None)
-        if minutes is None:
-            raw_json_candidate = reasoning_content if isinstance(reasoning_content, str) and reasoning_content.strip() else None
-            if raw_json_candidate is not None:
-                try:
-                    minutes = _parse_minutes_from_raw_json(raw_json_candidate)
-                except Exception as fallback_error:
-                    raise ValueError("Parsed MinutesResponse is missing in the response") from fallback_error
-            else:
-                raise ValueError("Parsed MinutesResponse is missing in the response")
+        content = getattr(first_message, "content", None)
+        reasoning_content = getattr(first_message, "reasoning_content", None)
 
-        return minutes
+        raw_json_candidate = content if isinstance(content, str) and content.strip() else None
+        if raw_json_candidate is None:
+            raw_json_candidate = reasoning_content if isinstance(reasoning_content, str) and reasoning_content.strip() else None
+
+        if raw_json_candidate is None:
+            raise ValueError("Empty LLM response content")
+
+        try:
+            return _parse_minutes_from_raw_json(raw_json_candidate)
+        except Exception as parse_error:
+            raise ValueError("Failed to parse MinutesResponse from LLM response") from parse_error
 
     except Exception as e:
         logger.error(f"Error in SGR parsing: {e}")
@@ -388,17 +403,17 @@ def main():
         for i, decision in enumerate(decisions, 1):
             # Format considered options as bullet list
             options_text = "<br>".join([f"- {opt}" for opt in decision.considered_options])
-            
+
             # Format consequences with line breaks
             consequences_text = "<br>".join(decision.consequences)
-            
+
             # Escape pipe characters in cell content
             context = decision.context.replace("|", "\\|")
             question = decision.question.replace("|", "\\|")
             decision_text = decision.proposed_decision.replace("|", "\\|")
             status = decision.status.replace("|", "\\|")
             rationale = decision.rationale.replace("|", "\\|")
-            
+
             table += f"| {i} | {context} | {question} | {options_text} | {decision_text} | {status} | {consequences_text} | {rationale} |\n"
 
         return table
@@ -417,7 +432,7 @@ def main():
             task = assignment.task.replace("|", "\\|")
             responsible = assignment.responsible.replace("|", "\\|")
             deadline = assignment.deadline.replace("|", "\\|")
-            
+
             table += f"| {i} | {task} | {responsible} | {deadline} |\n"
 
         return table
