@@ -1,6 +1,6 @@
 [project]
 name = "meeting-summary"
-version = "2.1.0"
+version = "2.1.1"
 description = "Meeting summary from transcript"
 readme = "README.md"
 requires-python = ">=3.12"
